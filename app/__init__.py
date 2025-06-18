@@ -5,10 +5,11 @@ from flask_wtf.csrf import CSRFProtect
 from flask_talisman import Talisman
 from dotenv import load_dotenv
 from app.extensions import db, login_manager
-from app.config import DevelopmentConfig, ProductionConfig
 import os
 import logging
 from logging.handlers import RotatingFileHandler
+
+from .config import DevelopmentConfig, ProductionConfig, Config
 
 # Inicialización de extensiones
 mail = Mail()
@@ -17,29 +18,16 @@ talisman = Talisman()
 
 def create_app(config_name=None):
     load_dotenv()
+
     app = Flask(__name__)
 
-    # Configuración por entorno
-    if config_name == 'testing':
-        app.config.from_mapping(
-            TESTING=True,
-            SQLALCHEMY_DATABASE_URI='sqlite:///:memory:',
-            WTF_CSRF_ENABLED=False,
-            SECRET_KEY='test',
-            SQLALCHEMY_TRACK_MODIFICATIONS=False,
-            MAIL_SUPPRESS_SEND=True
-        )
+    # Configuración según config_name
+    if config_name == 'development':
+        app.config.from_object(DevelopmentConfig)
+    elif config_name == 'production':
+        app.config.from_object(ProductionConfig)
     else:
-        if os.getenv('FLASK_ENV') == 'development':
-            app.config.from_object(DevelopmentConfig)
-        else:
-            app.config.from_object(ProductionConfig)
-
-    # Validar configuración crítica
-    if not app.config['SECRET_KEY']:
-        raise ValueError("SECRET_KEY no está definido en las variables de entorno.")
-    if not app.config['SQLALCHEMY_DATABASE_URI']:
-        raise ValueError("DATABASE_URL no está definido en las variables de entorno.")
+        app.config.from_object(Config)
 
     # Inicializar extensiones
     db.init_app(app)
@@ -48,8 +36,8 @@ def create_app(config_name=None):
     mail.init_app(app)
     csrf.init_app(app)
 
-    # Talisman solo en producción
-    if config_name != 'testing' and os.getenv('FLASK_ENV') != 'development':
+    # Configuración de Talisman solo en producción (no testing/dev)
+    if config_name != 'testing' and os.getenv("FLASK_ENV") != "development":
         csp = {
             'default-src': "'self'",
             'script-src': "'self' https://cdn.jsdelivr.net",
@@ -60,7 +48,7 @@ def create_app(config_name=None):
         }
         talisman.init_app(app, content_security_policy=csp)
 
-    # Importar modelos
+    # Importar modelos después de inicializar db
     from app.models import Usuario
 
     # Registrar Blueprints
@@ -69,26 +57,30 @@ def create_app(config_name=None):
     app.register_blueprint(auth)
     app.register_blueprint(main)
 
-    # Cargar usuario
+    # Cargar usuario para flask-login
     @login_manager.user_loader
     def load_user(user_id):
         return Usuario.query.get(int(user_id))
 
-    # Manejo de errores
+    # Manejo de errores 403
     @app.errorhandler(403)
     def forbidden_error(error):
         return render_template('403.html'), 403
 
-    # Configuración de logs en producción
+    # Configuración de logs solo para producción
     if config_name != 'testing':
         if not os.path.exists('logs'):
             os.mkdir('logs')
 
         file_handler = RotatingFileHandler('logs/app.log', maxBytes=10240, backupCount=3)
-        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        file_handler.setFormatter(logging.Formatter(
+            '%(asctime)s - %(levelname)s - %(message)s'
+        ))
         file_handler.setLevel(logging.INFO)
+
         app.logger.addHandler(file_handler)
         app.logger.setLevel(logging.INFO)
         app.logger.info('App iniciada')
 
     return app
+
