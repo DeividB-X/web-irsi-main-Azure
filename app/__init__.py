@@ -2,9 +2,10 @@ from flask import Flask, render_template
 from flask_login import LoginManager
 from flask_mail import Mail
 from flask_wtf.csrf import CSRFProtect
-from flask_talisman import Talisman 
+from flask_talisman import Talisman
 from dotenv import load_dotenv
 from app.extensions import db, login_manager
+from app.config import DevelopmentConfig, ProductionConfig
 import os
 import logging
 from logging.handlers import RotatingFileHandler
@@ -12,14 +13,13 @@ from logging.handlers import RotatingFileHandler
 # Inicialización de extensiones
 mail = Mail()
 csrf = CSRFProtect()
-talisman = Talisman()  
+talisman = Talisman()
 
 def create_app(config_name=None):
     load_dotenv()
-    
     app = Flask(__name__)
-    
-    # Configuración basada en el entorno
+
+    # Configuración por entorno
     if config_name == 'testing':
         app.config.from_mapping(
             TESTING=True,
@@ -27,39 +27,40 @@ def create_app(config_name=None):
             WTF_CSRF_ENABLED=False,
             SECRET_KEY='test',
             SQLALCHEMY_TRACK_MODIFICATIONS=False,
-            MAIL_SUPPRESS_SEND=True  # Para pruebas con mail
+            MAIL_SUPPRESS_SEND=True
         )
     else:
-        app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER')
-        app.config['MAIL_PORT'] = os.getenv('MAIL_PORT')
-        app.config['MAIL_USE_TLS'] = os.getenv('MAIL_USE_TLS', 'True') == 'True'
-        app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
-        app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
-        app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
-        app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
-        app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+        if os.getenv('FLASK_ENV') == 'development':
+            app.config.from_object(DevelopmentConfig)
+        else:
+            app.config.from_object(ProductionConfig)
 
-    # Inicializar extensiones con la app
+    # Validar configuración crítica
+    if not app.config['SECRET_KEY']:
+        raise ValueError("SECRET_KEY no está definido en las variables de entorno.")
+    if not app.config['SQLALCHEMY_DATABASE_URI']:
+        raise ValueError("DATABASE_URL no está definido en las variables de entorno.")
+
+    # Inicializar extensiones
     db.init_app(app)
     login_manager.init_app(app)
     login_manager.login_view = 'auth.login'
     mail.init_app(app)
     csrf.init_app(app)
 
-    # Configuración de Talisman (excepto en testing y development)
-    if config_name != 'testing':
-        if os.getenv("FLASK_ENV") != "development":
-            csp = {
-                'default-src': "'self'",
-                'script-src': "'self' https://cdn.jsdelivr.net",   
-                'connect-src': "'self'",
-                'img-src': "'self' data:",
-                'style-src': "'self' https://cdn.jsdelivr.net",   
-                'font-src': "'self' https://cdn.jsdelivr.net"   
-            }
-            talisman.init_app(app, content_security_policy=csp)  # Usamos la instancia global
+    # Talisman solo en producción
+    if config_name != 'testing' and os.getenv('FLASK_ENV') != 'development':
+        csp = {
+            'default-src': "'self'",
+            'script-src': "'self' https://cdn.jsdelivr.net",
+            'connect-src': "'self'",
+            'img-src': "'self' data:",
+            'style-src': "'self' https://cdn.jsdelivr.net",
+            'font-src': "'self' https://cdn.jsdelivr.net"
+        }
+        talisman.init_app(app, content_security_policy=csp)
 
-    # Importar modelos después de inicializar db
+    # Importar modelos
     from app.models import Usuario
 
     # Registrar Blueprints
@@ -78,17 +79,14 @@ def create_app(config_name=None):
     def forbidden_error(error):
         return render_template('403.html'), 403
 
-    # Configuración de logs (solo para producción)
+    # Configuración de logs en producción
     if config_name != 'testing':
         if not os.path.exists('logs'):
             os.mkdir('logs')
 
         file_handler = RotatingFileHandler('logs/app.log', maxBytes=10240, backupCount=3)
-        file_handler.setFormatter(logging.Formatter(
-            '%(asctime)s - %(levelname)s - %(message)s'
-        ))
+        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
         file_handler.setLevel(logging.INFO)
-
         app.logger.addHandler(file_handler)
         app.logger.setLevel(logging.INFO)
         app.logger.info('App iniciada')

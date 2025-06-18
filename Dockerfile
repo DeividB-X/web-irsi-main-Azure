@@ -1,7 +1,17 @@
 # Imagen base oficial de Python
 FROM python:3.11-slim
 
-# Instalar dependencias del sistema necesarias para pyodbc y el driver ODBC 18
+# Variables de entorno necesarias
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Crear y usar directorio de trabajo
+WORKDIR /app
+
+# Copiar archivos del proyecto al contenedor
+COPY . .
+
+# Instalar dependencias del sistema necesarias para pyodbc y ODBC Driver 18
 RUN apt-get update && apt-get install -y \
     curl \
     gnupg2 \
@@ -11,29 +21,16 @@ RUN apt-get update && apt-get install -y \
     g++ \
     libssl-dev \
     libffi-dev \
-    libpq-dev \
-    && curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - \
-    && curl https://packages.microsoft.com/config/debian/12/prod.list > /etc/apt/sources.list.d/mssql-release.list \
-    && apt-get update && ACCEPT_EULA=Y apt-get install -y msodbcsql18 \
-    && apt-get clean
+    libpq-dev
 
-# Crear directorio de trabajo
-WORKDIR /app
+# Agregar la clave pública de Microsoft (nuevo método)
+RUN curl -sSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /etc/apt/trusted.gpg.d/microsoft.gpg
 
-# Copiar todos los archivos del proyecto al contenedor
-COPY . .
+# Agregar repositorio de Microsoft firmado
+RUN echo "deb [arch=amd64 signed-by=/etc/apt/trusted.gpg.d/microsoft.gpg] https://packages.microsoft.com/debian/12/prod bookworm main" > /etc/apt/sources.list.d/mssql-release.list
 
-# Instalar dependencias Python
-RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
+# Instalar controlador msodbcsql18
+RUN apt-get update && ACCEPT_EULA=Y apt-get install -y msodbcsql18 && apt-get clean
 
-# Variables de entorno para producción
-ENV FLASK_APP=run.py
-ENV FLASK_RUN_HOST=0.0.0.0
-ENV FLASK_ENV=production
-
-# Puerto de exposición (Render usa 5000 por defecto)
-EXPOSE 5000
-
-# Comando para iniciar la aplicación Flask
-CMD ["python", "run.py"]
+# Instalar dependencias de Python
+RUN pip install --
