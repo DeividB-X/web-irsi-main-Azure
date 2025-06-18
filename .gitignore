@@ -1,26 +1,14 @@
-# Ignorar archivos y carpetas generados por Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.pyc
-
-# Ignorar archivos y carpetas generados por el entorno virtual
-venv/
-env/
-
-# Ignorar archivos de configuración de desarrollo
+*.py[cod]
+test/
+logs/
 .env
 .flaskenv
-
-# Ignorar archivos de logs
-logs/
-*.log
-
-# Ignorar archivos de compilación y distribución
-build/
-dist/
-*.egg-info/
-
-# Ignorar el archivo específico
-hashear_password.py
+.git/
+.gitignore
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+MSSQL/
