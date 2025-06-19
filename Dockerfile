@@ -5,30 +5,26 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Instala dependencias y driver Microsoft ODBC 18
-RUN apt-get update && apt-get install -y \
-    curl \
-    gnupg2 \
-    unixodbc \
-    unixodbc-dev \
-    gcc \
-    g++ \
-    build-essential \
-    && curl -sSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /etc/apt/trusted.gpg.d/microsoft.gpg \
-    && curl https://packages.microsoft.com/config/debian/12/prod.list > /etc/apt/sources.list.d/mssql-release.list \
+# Instala dependencias del sistema y el driver ODBC 18 desde repositorio Ubuntu 20.04
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       curl gnupg2 unixodbc unixodbc-dev gcc g++ build-essential \
+    && curl -sSL https://packages.microsoft.com/keys/microsoft.asc | apt-key add - \
+    && curl -sSL https://packages.microsoft.com/config/ubuntu/20.04/prod.list \
+       > /etc/apt/sources.list.d/mssql-release.list \
     && apt-get update \
     && ACCEPT_EULA=Y apt-get install -y msodbcsql18 \
-    && apt-get clean
+    && rm -rf /var/lib/apt/lists/*
 
-# Instala dependencias Python
+# Instala las dependencias de Python
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia código
+# Copia el resto de la aplicación
 COPY . .
 
-# Expone el puerto
+# Expone el puerto usado por Gunicorn
 EXPOSE 5000
 
-# Inicia la app
+# Comando por defecto
 CMD ["gunicorn", "--bind", "0.0.0.0:5000", "run:app"]
